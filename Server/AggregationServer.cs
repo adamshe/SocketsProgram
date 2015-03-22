@@ -13,6 +13,8 @@ using System.Threading;
 
 namespace QuestPartners.Interview.Server
 {
+    //https://msdn.microsoft.com/en-us/library/fx6588te(v=vs.110).aspx
+
     public class AggregationServer : IDisposable
     {
         #region private member 
@@ -60,6 +62,7 @@ namespace QuestPartners.Interview.Server
                 this.Stop();
                 this._listener = new Socket(this._localEndPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 this._listener.Bind(this._localEndPoint);
+                //int maxCapacity = (int)SocketOptionName.MaxConnections;
                 this._listener.Listen(60);
                 Console.WriteLine("server is listening @" + _localEndPoint.Address + ":" + _localEndPoint.Port + " with 60 concurrent capacity");
                 ThreadPool.QueueUserWorkItem(new WaitCallback(this.BeginAccept), null);
