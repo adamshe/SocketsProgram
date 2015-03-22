@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace QuestPartners.Interview.Client
 {
-    public class ReportClient : IDisposable
+    public class ReportClient1 : IDisposable
     {
         private Socket _socket;
         private string _ipAddress;
@@ -22,44 +22,69 @@ namespace QuestPartners.Interview.Client
         private static AutoResetEvent _sendDone = new AutoResetEvent(false);
 
         private int _waitTime = 600;
-        public ReportClient(string ipAddress, int port)
+        public ReportClient1(string ipAddress, int port)
         {
             _waitTime = int.Parse(ConfigurationManager.AppSettings["interval"]);
             _ipAddress = ipAddress;
             _port = port;
             _endPoint = UtilityHelper.GetEndPoint(ipAddress, port);
-
-            _timer = new Timer(SendReport, null, _waitTime, _waitTime);
+           // _timer = new Timer(SendReport, null, _waitTime, long.MaxValue);
+            _socket = new Socket(this._endPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.DontLinger, true);
         }
 
-        private void SendReport(object state)
+        public void Start()
+        {
+            LoopConnect();
+            SendReport();
+        }
+        private void SendReport()
         {
             try
             {
-                _connectDone.Reset();
-                _sendDone.Reset();
-                _socket = new Socket(this._endPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);  
-                double val = UtilityHelper.RandomNormal(0, 2);
-                byte[] buffer = Encoding.UTF8.GetBytes(val.ToString("######.000000"));
+              
+                while (true)
+                {
+                    double val = UtilityHelper.RandomNormal(0, 2);
+                    var content = val.ToString("######.000000");
+                    byte[] buffer = Encoding.UTF8.GetBytes(content);
 
-                //_socket.BeginConnect(_endPoint, ConnectCallBack, _socket);
+                    //_socket.BeginConnect(_endPoint, ConnectCallBack, _socket);
 
-                //_connectDone.WaitOne();
-                //Send(_socket,buffer);
-                //_sendDone.WaitOne();
-
-                _socket.Connect(_endPoint);
-                _socket.Send(buffer);
-
-                Console.WriteLine("socket connect to server @" + _endPoint.Address + ":" + _endPoint.Port);
-                Console.WriteLine("value sent " + Encoding.Default.GetString(buffer));
-                               
-                Dispose();
+                    //_connectDone.WaitOne();
+                    //Send(_socket, buffer);
+                    _socket.Send(buffer);
+                  //  _sendDone.WaitOne();
+                    Console.WriteLine("socket connect to server @" + _endPoint.Address + ":" + _endPoint.Port);
+                    Console.WriteLine("value sent {0} {1} bytes", Encoding.Default.GetString(buffer), buffer.Length);
+                    Thread.Sleep(_waitTime);
+                }
+               // Dispose();
             }
             catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
             }
+        }
+
+        private void LoopConnect()
+        {
+            int attempts = 0;
+            while (!_socket.Connected)
+            {
+                try
+                {
+                    attempts++;
+                    _socket.Connect(_endPoint);
+                }
+                catch (SocketException)
+                {
+                    Console.Clear();
+                    Console.WriteLine("connection attempts: " + attempts);
+                }
+            }
+            Console.Clear();
+            Console.WriteLine("Client Connected");
         }
 
         private static void Send(Socket socket, byte[] byteData)
@@ -77,11 +102,12 @@ namespace QuestPartners.Interview.Client
                 Socket client = (Socket)ar.AsyncState;
 
                 // Complete sending the data to the remote device.
-                int bytesSent = client.EndSend(ar);
-                Console.WriteLine("Sent {0} bytes to server.", bytesSent);
+                int bytesSent = client.EndSend(ar);               
 
                 // Signal that all bytes have been sent.
                 _sendDone.Set();
+
+                Console.WriteLine("Sent {0} bytes to server.", bytesSent);
             }
             catch (Exception e)
             {

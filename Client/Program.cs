@@ -14,6 +14,7 @@ namespace Client
             ConsoleKeyInfo ck;
             using (var client = new ReportClient("127.0.0.1", 990))
             {
+               // client.Start();
               do
               {
                 ck = Console.ReadKey();

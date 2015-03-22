@@ -14,7 +14,7 @@ using System.Threading;
 namespace QuestPartners.Interview.Server
 {
     //https://msdn.microsoft.com/en-us/library/fx6588te(v=vs.110).aspx
-
+    // this server destroy handler socket
     public class AggregationServer : IDisposable
     {
         #region private member 
@@ -30,6 +30,7 @@ namespace QuestPartners.Interview.Server
         private Timer _timer;
         private int _period ;
         private object _lock = new object();
+        private AutoResetEvent _connected = new AutoResetEvent(false);
         #endregion
 
         #region Constructor
@@ -52,7 +53,8 @@ namespace QuestPartners.Interview.Server
         #region Public Method
         public void Start()
         {
-            Listen();            
+            //Listen();            
+            ListenWhile();
         }
 
         public void Listen()
@@ -74,15 +76,37 @@ namespace QuestPartners.Interview.Server
             }
         }
 
-        private void BeginAccept(object state)
+        public void ListenWhile()
         {
             try
             {
-                this._listener.BeginAccept(new AsyncCallback(this.AcceptConnectionCallback), this._listener);
+                this.Stop();
+                this._listener = new Socket(this._localEndPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                this._listener.Bind(this._localEndPoint);
+               Console.WriteLine("server is listening @" + _localEndPoint.Address + ":" + _localEndPoint.Port + " with 60 concurrent capacity");
+               this._listener.Listen(60);
+               while (true)
+                {                    
+                    this._listener.BeginAccept(new AsyncCallback(this.OnConnectionAccepted1), this._listener);
+                    _connected.WaitOne();
+                }
             }
             catch (Exception e)
             {
                 _log.Warn(e.Message);
+                this.Stop();
+            }
+        }
+
+        private void BeginAccept(object state)
+        {
+            try
+            {
+                this._listener.BeginAccept(new AsyncCallback(this.OnConnectionAccepted), this._listener);
+            }
+            catch (Exception e)
+            {
+                _log.Error(e.Message);
             }
         }
 
@@ -123,57 +147,103 @@ namespace QuestPartners.Interview.Server
             //}
         }
 
-        private void AcceptConnectionCallback(IAsyncResult AsyncResult)
+        private void OnConnectionAccepted1(IAsyncResult AsyncResult)
         {
-            Socket socket = null;
+            Socket socketHandler = null;
             try
-            {              
-                socket = this._listener.EndAccept(AsyncResult);
-                Console.WriteLine("socket connected!");
-                IPEndPoint iPEndPoint = (IPEndPoint)socket.RemoteEndPoint;
- 
-                InitializeHandlerSocker(socket);
-                SocketInfoHost buffer = new SocketInfoHost(socket);
-                socket.BeginReceive(buffer.buffer, 0, SocketInfoHost.BUFFER_SIZE, 0, new AsyncCallback(ReceiveCallBack), buffer);                                  
+            {
+                socketHandler = this._listener.EndAccept(AsyncResult);
+                _connected.Set();                                
+                IPEndPoint iPEndPoint = (IPEndPoint)socketHandler.RemoteEndPoint;
+                Console.WriteLine("socket connected from {0}!" , iPEndPoint.ToString());
+
+                InitializeHandlerSocker(socketHandler);
+                SocketInfoHost hostInfo = SocketInfoHost.Create(socketHandler);
+                socketHandler.BeginReceive(hostInfo.buffer, 0, SocketInfoHost.BUFFER_SIZE, 0, new AsyncCallback(OnReceived), hostInfo);
             }
 
             catch (Exception e)
             {
-                if (socket != null)
+                _connected.Set();                
+                if (socketHandler != null)
                 {
-                    socket.Close();
+                    socketHandler.Close();
+                }
+                _log.Error(e.Message);
+            }            
+        }
+
+        private void OnConnectionAccepted(IAsyncResult AsyncResult)
+        {
+            Socket socketHandler = null;
+            try
+            {              
+                socketHandler = this._listener.EndAccept(AsyncResult);
+                ThreadPool.QueueUserWorkItem(new WaitCallback(this.BeginAccept), null);         
+                Console.WriteLine("socket connected!");
+                IPEndPoint iPEndPoint = (IPEndPoint)socketHandler.RemoteEndPoint;
+ 
+                InitializeHandlerSocker(socketHandler);
+                SocketInfoHost buffer = new SocketInfoHost(socketHandler);
+                socketHandler.BeginReceive(buffer.buffer, 0, SocketInfoHost.BUFFER_SIZE, 0, new AsyncCallback(OnReceived), buffer);                                  
+            }
+            catch (Exception e)
+            {
+                ThreadPool.QueueUserWorkItem(new WaitCallback(this.BeginAccept), null);         
+                if (socketHandler != null)
+                {
+                    socketHandler.Close();
                 }
                 _log.Warn(e.Message);
             }
-            finally
-            {                                
-                ThreadPool.QueueUserWorkItem(new WaitCallback(this.BeginAccept), null);                
-            }
+            //finally
+            //{                                
+            //    ThreadPool.QueueUserWorkItem(new WaitCallback(this.BeginAccept), null);                
+            //}
         }
 
-        private void ReceiveCallBack(IAsyncResult ar)
-        {
+        private void OnReceived(IAsyncResult ar)
+        {  
             SocketInfoHost infoHost = (SocketInfoHost)ar.AsyncState;
-            Socket handler = infoHost.SocketHandler;
-            int read = handler.EndReceive(ar);
-            //TODO
-            if (read > 0)
+            try
             {
+              
+                Socket handler = infoHost.SocketHandler;
+                int read = handler.EndReceive(ar);
+                //TODO when sending content is larger than receiving buffer size
+                //if (read > 0)
+                //{
+                //    infoHost.Storage.Append(Encoding.ASCII.GetString(infoHost.buffer, 0, read));
+                //    handler.BeginReceive(infoHost.buffer, 0, SocketInfoHost.BUFFER_SIZE, 0, new AsyncCallback(OnReceived), infoHost);
+                //}
+                //else
+                //{
+                //    if (infoHost.Storage.Length > 0)
+                //    {
+                //        //All of the data has been read, construct SocketInfoHost
+                //        infoHost.PunchTimeStamp();
+                //        _infoRecords.Add(infoHost);
+                //        Console.WriteLine("received " + infoHost.Value);
+
+                //    }
+                //    handler.Close();
+                //}           
                 infoHost.Storage.Append(Encoding.ASCII.GetString(infoHost.buffer, 0, read));
-                handler.BeginReceive(infoHost.buffer, 0, SocketInfoHost.BUFFER_SIZE, 0, new AsyncCallback(ReceiveCallBack), infoHost);
-            }
-            else
-            {
-                if (infoHost.Storage.Length > 0)
-                {
-                    //All of the data has been read, construct SocketInfoHost
-                    infoHost.PunchTimeStamp();
-                    _infoRecords.Add(infoHost);
-                    Console.WriteLine("received " + infoHost.Value);
-                    
-                }
+                infoHost.PunchTimeStamp();
+                _infoRecords.Add(infoHost);
+                var contentReceived = infoHost.Storage.ToString();
+                Console.WriteLine("received " + contentReceived);
+
+                if (contentReceived.Length>10)
+                    _log.Warn(contentReceived);
+
+                handler.Shutdown(SocketShutdown.Both);
                 handler.Close();
-            }           
+            }
+            catch (Exception ex)
+            {
+                _log.Error("Receive Error " + infoHost.Storage.ToString(), ex);
+            }
         }
         
         public void Stop()

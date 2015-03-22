@@ -11,9 +11,13 @@ namespace QuestPartners.Interview.Server
     {
         private Socket _handler;
         private string _timeStamp;
-        public const int BUFFER_SIZE = 64;
+        public const int BUFFER_SIZE = 16;
         public byte[] buffer = new byte[BUFFER_SIZE];
 
+        public static SocketInfoHost Create (Socket handler)
+        {
+            return new SocketInfoHost(handler);
+        }
         public SocketInfoHost(Socket handler)
         {
             _handler = handler;
