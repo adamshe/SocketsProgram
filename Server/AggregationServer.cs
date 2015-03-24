@@ -153,6 +153,7 @@ namespace QuestPartners.Interview.Server
             try
             {
                 socketHandler = this._listener.EndAccept(AsyncResult);
+                //this._listener.BeginAccept(new AsyncCallback(this.OnConnectionAccepted1), this._listener);
                 _connected.Set();                                
                 IPEndPoint iPEndPoint = (IPEndPoint)socketHandler.RemoteEndPoint;
                 Console.WriteLine("socket connected from {0}!" , iPEndPoint.ToString());
